@@ -1,0 +1,151 @@
+
+---
+title: "ML algorithm to predict Activity Quality "
+author: "Rashmi Nalavade"
+date: "Sunday, June 22, 2014"
+output: html_document
+---
+
+## Synopsis :  
+
+The goal of this assignment is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants, and build a machine learning algorithm which will predict activity quality from activity monitoring data.
+ 
+The 6 participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways which define 5 different levels of activity quality. The ML algorithm must correctly predict the activity quality for the given monitoring data.
+
+## Load and Partition the data:  
+
+We load and partition the dataset into 3 equal(~6479 samples) segments : training, crossvalidation and test.
+```{r}
+pmlTrain <- read.csv("pml-training.csv")
+pmlTest <- read.csv("pml-testing.csv")
+library(caret)
+inTrain <- createDataPartition(y=pmlTrain$classe,p=0.33,list = FALSE)
+training <- pmlTrain[inTrain,]
+pmlRem <- pmlTrain[-inTrain,]
+inTest <- createDataPartition(y=pmlRem$classe,p=0.5,list = FALSE)
+CV <- pmlRem[inTest,]
+testing <- pmlRem[-inTest,]
+```
+## Preprocessing and Exploratory Analysis :  
+
+The original data set consisted of more than 100 different variables many of which either contained NAs or were blank. We identified and eliminated (>40) such NA/blank variables and arrived at a cleaner and tidier set consisting of 60 variables. 
+```{r}
+getnull <- is.na(head(training,n=1))
+getnm <- names(training)
+nmnotnull <- getnm[!getnull]
+train1 <- training[nmnotnull] # remove NA fields
+
+isbl <- function(x) x==""
+getbl <- isbl(head(train1,n=1))
+getnm1 <- names(train1)
+nmnotbl <- getnm1[!getbl]
+```
+
+Next on a closer inspection of sample data, we categorised the variables in 3 types as follows :  
+
+A. Generic id/datetime variables  (7)
+  *	X	
+	*	user_name	
+	*	raw-timestamp-part_1	
+	*	raw-timestamp-part_2	
+	*	cvtd_timestamp	
+	*	new_window	
+	*	num_window	
+
+B. Raw monitoring data variables (36)  
+  *	gyros-belt_x	
+	*	gyros-belt_y	
+	*	gyros-belt_z	
+	*	accel-belt_x	
+	*	accel-belt_y	
+	*	accel-belt_z	
+	*	magnet-belt_x	
+	*	magnet-belt_y	
+	*	magnet-belt_z	
+  *	gyros-arm_x	
+	*	gyros-arm_y	
+	*	gyros-arm_z	
+	*	accel-arm_x	
+	*	accel-arm_y	
+	*	accel-arm_z	
+	*	magnet-arm_x	
+	*	magnet-arm_y	
+	*	magnet-arm_z	
+  *	gyros-dumbbell_x	
+	*	gyros-dumbbell_y	
+	*	gyros-dumbbell_z	
+	*	accel-dumbbell_x	
+	*	accel-dumbbell_y	
+	*	accel-dumbbell_z	
+	*	magnet-dumbbell_x	
+	*	magnet-dumbbell_y	
+	*	magnet-dumbbell_z	
+  *	gyros-forearm_x	
+	*	gyros-forearm_y	
+	*	gyros-forearm_z	
+	*	accel-forearm_x	
+	*	accel-forearm_y	
+	*	accel-forearm_z	
+	*	magnet-forearm_x	
+	*	magnet-forearm_y	
+	*	magnet-forearm_z	
+
+C. Derived/Complex monitoring variables (16)
+  *	roll_belt	
+	*	pitch_belt	
+	*	yaw_belt	
+	*	total-accel_belt	
+  *	roll_arm	
+	*	pitch_arm	
+	*	yaw_arm	
+	*	total-accel-arm	
+  *	roll_dumbbell	
+	*	pitch_dumbbell	
+	*	yaw_dumbbell	
+	*	total-accel-dumbbell	
+  *	roll_forearm	
+	*	pitch_forearm	
+	*	yaw_forearm	
+	*	total-accel-forearm	
+  
+```{r}
+featurePlot(x=train1[,nmnotbl[c(1:7)]],y=train1$classe,plot="pairs") ## does not give much insight
+```
+
+Above Feature plot shows that 'X' is an sequential rownum which accurately classifies the output in incremental steps, resulting in over-fitting the data. Moreover the variable 'num-window' seems to be highly co-related with 'raw-timestamp-part-1'. Hence we decide to exclude the two variables viz. 'X' and 'num_window'.
+
+The derived monitoring variables were fewer(16) than the raw monitoring variables(36). Moreover we expected the derived variables to contain more intelligence about the activity quality than the raw ones. Hence we finalised a dataset consisting of the derived variables(16) and a few(5) generic variables. Thus we reduced a data set of more than 100 variables to a much more tidier, reliable and smaller dataset 21 variables as shown below.
+
+```{r}
+usenm <- nmnotbl[c(2:6,8:11,21:24,34:37,47:50,60)] 
+
+# remove blank fields and keep only unique useful fields in the datasets
+train2 <- train1[usenm] 
+test2 <- testing[usenm]
+CV2 <- CV[usenm]
+```
+## Model Selection, Prediction and Cross validation :  
+
+Now since we are faced with a 5-level classification problem we cannot use linear regression predictive models. Hence we decide to use Random Forests prediction algorithm, for its higher accuracy level over the other faster but less reliable tree algorithms like 'rpart'.
+
+```{r}
+library(randomForest)
+modFit <- train(classe~ .,data = train2,method="rf",prox=TRUE)
+modFit
+predCV <- predict(modFit,CV2);CV2$predRight <- predCV == CV2$classe
+table(predCV,CV2$classe)
+predTest <- predict(modFit,test2);test2$predRight <- predTest == test2$classe
+table(predTest,test2$classe)
+```
+Using a common error measure "Concordance", we observe that a Kappa value of 0.993. Thus we have arrived at a very accurate model as expected. Cross validation and Test results reproduce the same high level of accuracy.
+
+## Expected Out of Sample error :  
+
+Thus we can safely expect an out of sample error rate of less that 1% or an accuracy of greater than 99 %.
+
+## Appendix :  
+
+Code for Project Submission Data :
+pmlTest1 <- c(pmlTest[usenm[1:21]], classe = "X")
+predpt <- predict(modFit,pmlTest1) 
+
